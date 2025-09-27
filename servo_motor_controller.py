@@ -11,18 +11,19 @@ class ServoMotorController:
     
     Features:
     - Absolute position control in degrees
-    - Static velocity and acceleration (500000 counts/sec and counts/sec²)
-    - Home position reference
+    - Configurable velocity and acceleration (default 500000 counts/sec and counts/sec²)
+    - Absolute home position in encoder ticks
     - Robust motor enabling with multiple fallback methods
     - Status monitoring and diagnostics
     """
     
-    def __init__(self, interface="eth0"):
+    def __init__(self, interface="eth0", home_position=0):
         """
         Initialize the servo motor controller
         
         Args:
             interface (str): Network interface name (e.g., "eth0", "enp3s0")
+            home_position (int): Absolute home position in encoder ticks (default: 0)
         """
         self.interface = interface
         self.master = None
@@ -32,16 +33,16 @@ class ServoMotorController:
         self.encoder_resolution = 262144  # 18-bit encoder counts per revolution
         self.gear_ratio = 1.0            # Gearbox ratio (1.0 = direct drive)
         
-        # Static motion parameters (500000 for both)
+        # Motion parameters (default 500000 for both)
         self.current_velocity = 500000      # counts/sec
         self.current_acceleration = 500000  # counts/sec²
         
         # State tracking
         self.is_initialized = False
-        self.home_position = 0           # Encoder counts at "zero" position
-        self.is_moving = False           # Movement status flag
-        self.motor_enabled = False       # Motor enable status
-        self.last_error = None           # Last error message
+        self.home_position = home_position   # Absolute home position in encoder ticks
+        self.is_moving = False               # Movement status flag
+        self.motor_enabled = False           # Motor enable status
+        self.last_error = None               # Last error message
         
     
     def connect(self):
@@ -84,11 +85,13 @@ class ServoMotorController:
                 print("WARNING: Motor may not be enabled. Some functions may not work.")
                 print("Try the re_enable() method or check servo drive manually.")
             
-            # Set home position
-            self.home_position = self._read_position()
-            print(f"Home position set to: {self.home_position} counts")
+            # Display absolute home position
+            current_position = self._read_position()
+            print(f"Absolute home position set to: {self.home_position:,} counts")
+            print(f"Current absolute position: {current_position:,} counts")
+            print(f"Relative position from home: {current_position - self.home_position:,} counts")
             
-            # Set static motion parameters
+            # Set motion parameters
             self._set_motion_parameters()
             
             self.is_initialized = True
@@ -173,7 +176,7 @@ class ServoMotorController:
         return False
 
     def _set_motion_parameters(self):
-        """Set static motion parameters (500000 for both velocity and acceleration)"""
+        """Set motion parameters"""
         print(f"Setting motion parameters:")
         print(f"   Velocity: {self.current_velocity:,} counts/sec")
         print(f"   Acceleration: {self.current_acceleration:,} counts/sec²")
@@ -188,6 +191,40 @@ class ServoMotorController:
             print("Warning: Some motion parameters failed to set")
         
         time.sleep(0.1)
+
+    def set_motion_parameters(self, velocity=None, acceleration=None):
+        """
+        Set motion parameters
+        
+        Args:
+            velocity (int): Velocity in counts/sec (None to keep current)
+            acceleration (int): Acceleration in counts/sec² (None to keep current)
+        """
+        if velocity is not None:
+            self.current_velocity = velocity
+        if acceleration is not None:
+            self.current_acceleration = acceleration
+        
+        self._set_motion_parameters()
+
+    def set_home_position(self, ticks=None):
+        """
+        Set home position to specific tick value or current position
+        
+        Args:
+            ticks (int): Absolute tick value for home (None = use current position)
+        """
+        if ticks is None:
+            # Set current position as home
+            self.home_position = self._read_position()
+            print(f"Home position set to current position: {self.home_position:,} counts")
+        else:
+            # Set specified absolute tick value as home
+            self.home_position = int(ticks)
+            current = self._read_position()
+            print(f"Home position set to: {self.home_position:,} counts")
+            print(f"Current position: {current:,} counts")
+            print(f"Offset from home: {current - self.home_position:,} counts")
 
     # ========================================================================================
     # MOTION CONTROL
@@ -314,6 +351,24 @@ class ServoMotorController:
             return self._counts_to_degrees(relative_counts)
         except:
             return None
+
+    def show_encoder_info(self):
+        """Display encoder ticks and position information"""
+        absolute_counts = self._read_position()
+        relative_counts = absolute_counts - self.home_position
+        degrees = (relative_counts * 360.0) / self.encoder_resolution
+        revolutions = degrees / 360.0
+        
+        print("\n" + "="*60)
+        print("ENCODER POSITION")
+        print("="*60)
+        print(f"Absolute encoder ticks:  {absolute_counts:,} counts")
+        print(f"Home position:           {self.home_position:,} counts")
+        print(f"Relative encoder ticks:  {relative_counts:,} counts")
+        print(f"Position in degrees:     {degrees:.2f}°")
+        print(f"Position in revolutions: {revolutions:.3f} rev")
+        print(f"Encoder resolution:      {self.encoder_resolution:,} counts/rev")
+        print("="*60 + "\n")
 
     def get_motor_status(self):
         """

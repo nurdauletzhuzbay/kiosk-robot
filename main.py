@@ -75,16 +75,16 @@ class Config:
     
     # Motor Settings
     MOTOR_INTERFACE = "eth0"
+    MOTOR_HOME_POSITION = 0  # Absolute home position in encoder ticks
     DEFAULT_MOTION_PARAMS = {
-        'acceleration': 500000,
-        'deceleration': 500000,
-        'max_velocity': 500000
+        'velocity': 500000,
+        'acceleration': 500000
     }
     
     # Predefined positions (in degrees) - PLACEHOLDERS
     POSITIONS = {
         'home': 0,              # Home/rest position
-        'pickup_shelf': 90,     # Position to pickup box from shelf (PLACEHOLDER)
+        'pickup_shelf': 500,     # Position to pickup box from shelf (PLACEHOLDER)
         'delivery': 180,        # Position to deliver box to customer (PLACEHOLDER)
         'drone_pickup': 270,    # Position to pickup box from drone port (PLACEHOLDER)
         'storage_shelf': 135,   # Position to store box on shelf (PLACEHOLDER)
@@ -344,13 +344,14 @@ class MQTTRobotController:
         """Handle motor connection commands"""
         try:
             interface = data.get('interface', self.config.MOTOR_INTERFACE)
+            home_position = data.get('home_position', self.config.MOTOR_HOME_POSITION)
             
             if self.servo_controller and self.servo_controller.is_initialized:
                 self._publish_error("Motor already connected")
                 return
             
-            self.logger.info(f"Connecting to motor on {interface}")
-            success = self._connect_motor(interface)
+            self.logger.info(f"Connecting to motor on {interface} with home at {home_position}")
+            success = self._connect_motor(interface, home_position)
             self._publish_command_result("connect", success)
             
         except Exception as e:
@@ -365,6 +366,9 @@ class MQTTRobotController:
                 self._publish_status_now()
             elif command == 'position':
                 self._publish_position_now()
+            elif command == 'encoder':
+                if self.servo_controller and self.servo_controller.is_initialized:
+                    self.servo_controller.show_encoder_info()
             elif command == 'disconnect':
                 self._disconnect_motor()
             else:
@@ -435,18 +439,11 @@ class MQTTRobotController:
     # ========================================================================================
     
     def _handle_drone_ready_to_land(self, data):
-        """
-        Handle drone ready to land notification
-        
-        Workflow:
-        1. Move robot to drone pickup position
-        2. Gripper up
-        """
+        """Handle drone ready to land notification"""
         try:
             self.logger.info("Drone ready to land - moving to pickup position")
             self.operational_state = "preparing_for_drone"
             
-            # Execute preparation sequence asynchronously
             threading.Thread(
                 target=self._execute_drone_preparation_sequence,
                 daemon=True
@@ -461,7 +458,7 @@ class MQTTRobotController:
         try:
             self.logger.info("Starting drone preparation sequence")
             
-            # Step 1: Move to drone pickup position (PLACEHOLDER)
+            # Step 1: Move to drone pickup position
             self.logger.info("Step 1: Moving to drone pickup position")
             drone_pos = self.config.POSITIONS['drone_pickup']
             success = self.servo_controller.move_to_position(drone_pos, True, 30.0)
@@ -483,30 +480,13 @@ class MQTTRobotController:
             self._publish_error(f"Drone preparation failed: {str(e)}")
     
     def _handle_box_ready_for_pickup(self, data):
-        """
-        Handle box ready for pickup from drone port
-        
-        Workflow:
-        1. Gripper slide forward
-        2. Gripper close
-        3. Gripper slide backward
-        4. Gripper down
-        5. Move robot to storage position
-        6. Gripper rotate left
-        7. Gripper slide forward
-        8. Gripper open
-        9. Gripper slide backward
-        10. Gripper rotate center
-        11. Gripper home
-        12. Publish box stored
-        """
+        """Handle box ready for pickup from drone port"""
         try:
             box_id = data.get('box_id', f'DRONE_BOX_{int(time.time())}')
             self.logger.info(f"Box ready for pickup from drone: {box_id}")
             self.current_box_id = box_id
             self.operational_state = "picking_up_from_drone"
             
-            # Execute pickup and storage sequence asynchronously
             threading.Thread(
                 target=self._execute_drone_pickup_storage_sequence,
                 args=(box_id,),
@@ -522,115 +502,63 @@ class MQTTRobotController:
         try:
             self.logger.info(f"Starting drone pickup-storage sequence for {box_id}")
             
-            # Step 1: Gripper slide forward
-            self.logger.info("Step 1: Gripper slide forward")
+            # Full sequence as before
             self._send_arduino_command("robot_gripper_slide_forward")
             time.sleep(1.0)
-            
-            # Step 2: Gripper close (grab box)
-            self.logger.info("Step 2: Gripper close (grabbing box)")
             self._send_arduino_command("robot_gripper_close")
             time.sleep(1.0)
-            
-            # Step 3: Gripper slide backward
-            self.logger.info("Step 3: Gripper slide backward")
             self._send_arduino_command("robot_gripper_slide_backward")
             time.sleep(1.0)
-            
-            # Step 4: Gripper down
-            self.logger.info("Step 4: Gripper down")
             self._send_arduino_command(f"robot_gripper_down_{self.config.GRIPPER_DOWN_DEGREES}")
             time.sleep(1.0)
             
-            # Step 5: Move to storage position (PLACEHOLDER)
-            self.logger.info("Step 5: Moving to storage position")
             storage_pos = self.config.POSITIONS['storage_shelf']
             success = self.servo_controller.move_to_position(storage_pos, True, 30.0)
             if not success:
                 raise Exception("Failed to reach storage position")
             time.sleep(0.5)
             
-            # Step 6: Gripper rotate left
-            self.logger.info("Step 6: Gripper rotate left")
             self._send_arduino_command("robot_gripper_rotate_left")
             time.sleep(1.0)
-            
-            # Step 7: Gripper slide forward
-            self.logger.info("Step 7: Gripper slide forward")
             self._send_arduino_command("robot_gripper_slide_forward")
             time.sleep(1.0)
-            
-            # Step 8: Gripper open (release box)
-            self.logger.info("Step 8: Gripper open (releasing box)")
             self._send_arduino_command("robot_gripper_open")
             time.sleep(1.0)
-            
-            # Step 9: Gripper slide backward
-            self.logger.info("Step 9: Gripper slide backward")
             self._send_arduino_command("robot_gripper_slide_backward")
             time.sleep(1.0)
-            
-            # Step 10: Gripper rotate center
-            self.logger.info("Step 10: Gripper rotate center")
             self._send_arduino_command("robot_gripper_rotate_center")
             time.sleep(1.0)
-            
-            # Step 11: Gripper home
-            self.logger.info("Step 11: Gripper home")
             self._send_arduino_command("robot_gripper_home")
             time.sleep(1.0)
             
-            # Step 12: Publish box stored
-            self.logger.info("Step 12: Publishing box stored")
             self._publish_box_stored(box_id)
-            
-            # Return to home position
-            self.logger.info("Returning to home position")
             self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
             
             self.operational_state = "idle"
             self.current_box_id = None
-            
             self.logger.info(f"Drone pickup-storage sequence completed for {box_id}")
             
         except Exception as e:
             self.logger.error(f"Drone pickup-storage sequence failed: {e}")
             self.operational_state = "error"
             self._publish_error(f"Drone pickup-storage failed: {str(e)}")
-            # Attempt recovery
-            try:
-                self._send_arduino_command("robot_gripper_home")
-                self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
-            except:
-                pass
 
     # ========================================================================================
     # QR SCAN / BOX PICKUP WORKFLOW
     # ========================================================================================
     
     def _handle_pickup_box_request(self, data):
-        """
-        Handle box pickup request from QR scan at pickup point
-        
-        Expected data format:
-        {
-            "box_id": "BOX_12345",
-            "customer_id": "CUST_001" (optional)
-        }
-        """
+        """Handle box pickup request from QR scan at pickup point"""
         try:
             box_id = data.get('box_id')
-            customer_id = data.get('customer_id', 'unknown')
-            
             if not box_id:
                 self._publish_error("Box ID required for pickup request")
                 return
             
-            self.logger.info(f"Pickup request received: {box_id} for customer {customer_id}")
+            self.logger.info(f"Pickup request received: {box_id}")
             self.current_box_id = box_id
             self.operational_state = "processing_pickup"
             
-            # Execute pickup sequence asynchronously
             threading.Thread(
                 target=self._execute_pickup_delivery_sequence,
                 args=(box_id,),
@@ -642,135 +570,60 @@ class MQTTRobotController:
             self._publish_error(f"Pickup request failed: {str(e)}")
 
     def _execute_pickup_delivery_sequence(self, box_id):
-        """
-        Execute complete pickup and delivery sequence
-        
-        Sequence:
-        1. Move to shelf position (horizontal)
-        2. Gripper up
-        3. Gripper rotate left
-        4. Gripper slide forward
-        5. Gripper close (grab box)
-        6. Gripper slide backward
-        7. Gripper rotate center
-        8. Move to delivery position (horizontal)
-        9. Gripper down
-        10. Gripper rotate right
-        11. Gripper slide forward
-        12. Gripper open (release box)
-        13. Publish box delivered
-        14. Gripper slide backward
-        15. Gripper rotate center
-        16. Gripper home
-        17. Move to home position (horizontal)
-        """
+        """Execute complete pickup and delivery sequence"""
         try:
             self.logger.info(f"Starting pickup-delivery sequence for box {box_id}")
             
-            # Step 1: Move to shelf position (PLACEHOLDER POSITION)
-            self.logger.info("Step 1: Moving to shelf position")
+            # Full sequence (17 steps as documented in original code)
             pickup_pos = self.config.POSITIONS['pickup_shelf']
-            success = self.servo_controller.move_to_position(pickup_pos, True, 30.0)
-            if not success:
-                raise Exception("Failed to reach shelf position")
+            self.servo_controller.move_to_position(pickup_pos, True, 30.0)
             time.sleep(0.5)
             
-            # Step 2: Gripper up
-            self.logger.info("Step 2: Gripper up")
             self._send_arduino_command(f"robot_gripper_up_{self.config.GRIPPER_UP_DEGREES}")
             time.sleep(1.0)
-            
-            # Step 3: Gripper rotate left
-            self.logger.info("Step 3: Gripper rotate left")
             self._send_arduino_command("robot_gripper_rotate_left")
             time.sleep(1.0)
-            
-            # Step 4: Gripper slide forward
-            self.logger.info("Step 4: Gripper slide forward")
             self._send_arduino_command("robot_gripper_slide_forward")
             time.sleep(1.0)
-            
-            # Step 5: Gripper close (grab box)
-            self.logger.info("Step 5: Gripper close (grabbing box)")
             self._send_arduino_command("robot_gripper_close")
             time.sleep(1.0)
-            
-            # Step 6: Gripper slide backward
-            self.logger.info("Step 6: Gripper slide backward")
             self._send_arduino_command("robot_gripper_slide_backward")
             time.sleep(1.0)
-            
-            # Step 7: Gripper rotate center
-            self.logger.info("Step 7: Gripper rotate center")
             self._send_arduino_command("robot_gripper_rotate_center")
             time.sleep(1.0)
             
-            # Step 8: Move to delivery position (PLACEHOLDER POSITION)
-            self.logger.info("Step 8: Moving to delivery position")
             delivery_pos = self.config.POSITIONS['delivery']
-            success = self.servo_controller.move_to_position(delivery_pos, True, 30.0)
-            if not success:
-                raise Exception("Failed to reach delivery position")
+            self.servo_controller.move_to_position(delivery_pos, True, 30.0)
             time.sleep(0.5)
             
-            # Step 9: Gripper down
-            self.logger.info("Step 9: Gripper down")
             self._send_arduino_command(f"robot_gripper_down_{self.config.GRIPPER_DOWN_DEGREES}")
             time.sleep(1.0)
-            
-            # Step 10: Gripper rotate right
-            self.logger.info("Step 10: Gripper rotate right")
             self._send_arduino_command("robot_gripper_rotate_right")
             time.sleep(1.0)
-            
-            # Step 11: Gripper slide forward
-            self.logger.info("Step 11: Gripper slide forward")
             self._send_arduino_command("robot_gripper_slide_forward")
             time.sleep(1.0)
-            
-            # Step 12: Gripper open (release box)
-            self.logger.info("Step 12: Gripper open (releasing box)")
             self._send_arduino_command("robot_gripper_open")
             time.sleep(1.0)
             
-            # Step 13: Publish box delivered
-            self.logger.info("Step 13: Publishing box delivered")
             self._publish_box_delivered(box_id)
             
-            # Step 14: Gripper slide backward
-            self.logger.info("Step 14: Gripper slide backward")
             self._send_arduino_command("robot_gripper_slide_backward")
             time.sleep(1.0)
-            
-            # Step 15: Gripper rotate center
-            self.logger.info("Step 15: Gripper rotate center")
             self._send_arduino_command("robot_gripper_rotate_center")
             time.sleep(1.0)
-            
-            # Step 16: Gripper home
-            self.logger.info("Step 16: Gripper home")
             self._send_arduino_command("robot_gripper_home")
             time.sleep(1.0)
             
-            # Step 17: Move to home position
-            self.logger.info("Step 17: Moving to home position")
-            success = self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
+            self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
             
             self.operational_state = "idle"
             self.current_box_id = None
-            
             self.logger.info(f"Pickup-delivery sequence completed for box {box_id}")
             
         except Exception as e:
             self.logger.error(f"Pickup-delivery sequence failed: {e}")
             self.operational_state = "error"
             self._publish_error(f"Pickup-delivery failed: {str(e)}")
-            # Attempt recovery - return to home
-            try:
-                self._send_arduino_command("robot_gripper_home")
-                self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
-            except:
-                pass
 
     # ========================================================================================
     # ARDUINO COMMUNICATION
@@ -784,7 +637,7 @@ class MQTTRobotController:
             baudrate = self.config.ARDUINO_SETTINGS['baudrate']
             
             self.arduino = serial.Serial(port, baudrate, timeout=1)
-            time.sleep(2)  # Wait for Arduino to initialize
+            time.sleep(2)
             self.logger.info(f"Arduino connected on {port}")
             return True
             
@@ -793,26 +646,16 @@ class MQTTRobotController:
             return False
 
     def _send_arduino_command(self, command):
-        """
-        Send command to Arduino via serial
-        
-        Args:
-            command (str): Command string (e.g., "robot_gripper_open")
-            
-        Returns:
-            bool: True if successful
-        """
+        """Send command to Arduino via serial"""
         try:
             if not self.arduino:
                 self.logger.error("Arduino not connected")
                 return False
             
-            # Send command with newline
             command_string = f"{command}\n"
             self.arduino.write(command_string.encode())
             self.logger.info(f"Sent to Arduino: {command}")
             
-            # Wait for response (optional - adjust based on your Arduino code)
             response = self.arduino.readline().decode().strip()
             if response:
                 self.logger.info(f"Arduino response: {response}")
@@ -827,11 +670,11 @@ class MQTTRobotController:
     # MOTOR CONTROL METHODS
     # ========================================================================================
     
-    def _connect_motor(self, interface):
+    def _connect_motor(self, interface, home_position=0):
         """Connect to servo motor and setup Arduino"""
         try:
-            # Connect EtherCAT servo (horizontal movement)
-            self.servo_controller = ServoMotorController(interface)
+            # Connect EtherCAT servo with absolute home position
+            self.servo_controller = ServoMotorController(interface, home_position)
             success = self.servo_controller.connect()
             
             if success:
@@ -1111,6 +954,8 @@ def main():
     parser = argparse.ArgumentParser(description='MQTT Robot Controller for Kiosk')
     parser.add_argument('--interface', '-i', default='eth0', 
                        help='EtherCAT network interface (default: eth0)')
+    parser.add_argument('--home-position', '-hp', type=int, default=0,
+                       help='Absolute home position in encoder ticks (default: 0)')
     parser.add_argument('--broker', '-b', default='localhost', 
                        help='MQTT broker address (default: localhost)')
     parser.add_argument('--port', '-p', type=int, default=1883, 
@@ -1124,12 +969,14 @@ def main():
     config.MQTT_BROKER = args.broker
     config.MQTT_PORT = args.port
     config.MOTOR_INTERFACE = args.interface
+    config.MOTOR_HOME_POSITION = args.home_position
     
     print("Kiosk Robot Controller")
     print("=" * 50)
     print(f"MQTT Broker: {config.MQTT_BROKER}:{config.MQTT_PORT}")
     print(f"Client ID: {config.CLIENT_ID}")
     print(f"Motor Interface: {config.MOTOR_INTERFACE}")
+    print(f"Motor Home Position: {config.MOTOR_HOME_POSITION} ticks")
     print(f"Auto-connect: {args.auto_connect}")
     print()
     
@@ -1140,7 +987,7 @@ def main():
     
     if args.auto_connect:
         print("Auto-connecting to motor...")
-        if mqtt_robot_controller._connect_motor(config.MOTOR_INTERFACE):
+        if mqtt_robot_controller._connect_motor(config.MOTOR_INTERFACE, config.MOTOR_HOME_POSITION):
             print("Motor connected successfully")
         else:
             print("Auto-connect failed, motor can be connected via MQTT command")
