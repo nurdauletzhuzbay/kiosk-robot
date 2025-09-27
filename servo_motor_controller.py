@@ -11,8 +11,9 @@ class ServoMotorController:
     
     Features:
     - Absolute position control in degrees
-    - Configurable acceleration, deceleration, and velocity
+    - Static velocity and acceleration (500000 counts/sec and counts/sec²)
     - Home position reference
+    - Robust motor enabling with multiple fallback methods
     - Status monitoring and diagnostics
     """
     
@@ -31,10 +32,15 @@ class ServoMotorController:
         self.encoder_resolution = 262144  # 18-bit encoder counts per revolution
         self.gear_ratio = 1.0            # Gearbox ratio (1.0 = direct drive)
         
+        # Static motion parameters (500000 for both)
+        self.current_velocity = 500000      # counts/sec
+        self.current_acceleration = 500000  # counts/sec²
+        
         # State tracking
         self.is_initialized = False
         self.home_position = 0           # Encoder counts at "zero" position
         self.is_moving = False           # Movement status flag
+        self.motor_enabled = False       # Motor enable status
         self.last_error = None           # Last error message
         
     
@@ -59,8 +65,32 @@ class ServoMotorController:
             self.slave = self.master.slaves[0]
             print(f"Connected to slave: {self.slave.name}")
             
-            # Initialize motor for position control
-            self._setup_motor()
+            # Check current status first
+            print("Checking current servo status...")
+            status = self._read_status()
+            if status:
+                print(f"Current status: 0x{status:04X}")
+                if status & 0x0004:  # Already enabled
+                    print("Motor already enabled!")
+                    self.motor_enabled = True
+                else:
+                    print("Motor not enabled, attempting to enable...")
+                    self.motor_enabled = self._try_enable_motor()
+            else:
+                print("Cannot read status, attempting enable anyway...")
+                self.motor_enabled = self._try_enable_motor()
+            
+            if not self.motor_enabled:
+                print("WARNING: Motor may not be enabled. Some functions may not work.")
+                print("Try the re_enable() method or check servo drive manually.")
+            
+            # Set home position
+            self.home_position = self._read_position()
+            print(f"Home position set to: {self.home_position} counts")
+            
+            # Set static motion parameters
+            self._set_motion_parameters()
+            
             self.is_initialized = True
             self.last_error = None
             print("Motor controller ready for position control!")
@@ -74,101 +104,95 @@ class ServoMotorController:
                 self.master.close()
             return False
 
-    def _setup_motor(self):
-        """Setup motor for Profile Position mode operation"""
-        print("Setting up motor...")
+    def _try_enable_motor(self):
+        """Try multiple methods to enable the motor"""
+        print("Trying different motor enabling methods...")
         
-        # Check current operation mode
-        current_mode = self._read_register(0x6061, "Operation Mode Display", signed=True)
-        print(f"   Current operation mode: {current_mode}")
+        # Method 1: Check if already enabled
+        status = self._read_status()
+        if status and (status & 0x0004):
+            print("Method 1: Already enabled")
+            return True
         
-        # Try to set Profile Position mode (mode 1)
-        print("   Setting Profile Position mode...")
+        # Method 2: Try direct operation enabled
+        print("Method 2: Direct operation enabled")
+        if self._safe_write(0x6040, struct.pack('<H', 0x000F)):
+            time.sleep(0.3)
+            status = self._read_status()
+            if status and (status & 0x0004):
+                print("Direct enable successful")
+                return True
+        
+        # Method 3: Standard sequence
+        print("Method 3: Standard CiA402 sequence")
         try:
-            self._write_register(0x6060, struct.pack('<b', 1), "Operation Mode")
-            time.sleep(0.1)
-        except Exception as e:
-            print(f"Could not set operation mode: {e}")
-            print("Motor may already be in correct mode")
+            # Shutdown
+            if self._safe_write(0x6040, struct.pack('<H', 0x0006)):
+                time.sleep(0.3)
+            
+            # Switch On  
+            if self._safe_write(0x6040, struct.pack('<H', 0x0007)):
+                time.sleep(0.3)
+            
+            # Operation Enabled
+            if self._safe_write(0x6040, struct.pack('<H', 0x000F)):
+                time.sleep(0.3)
+                status = self._read_status()
+                if status and (status & 0x0004):
+                    print("Standard sequence successful")
+                    return True
+        except:
+            pass
         
-        # Verify operation mode
-        final_mode = self._read_register(0x6061, "Operation Mode Display", signed=True)
-        print(f"   Final operation mode: {final_mode}")
-        if final_mode != 1:
-            print(f"   Warning: Motor is in mode {final_mode}, not Profile Position (1)")
+        # Method 4: Try with voltage enable first
+        print("Method 4: Voltage enable sequence")
+        try:
+            # Enable voltage
+            if self._safe_write(0x6040, struct.pack('<H', 0x0002)):
+                time.sleep(0.3)
+            
+            # Shutdown
+            if self._safe_write(0x6040, struct.pack('<H', 0x0006)):
+                time.sleep(0.3)
+            
+            # Switch On
+            if self._safe_write(0x6040, struct.pack('<H', 0x0007)):
+                time.sleep(0.3)
+            
+            # Operation Enabled
+            if self._safe_write(0x6040, struct.pack('<H', 0x000F)):
+                time.sleep(0.3)
+                status = self._read_status()
+                if status and (status & 0x0004):
+                    print("Voltage enable sequence successful")
+                    return True
+        except:
+            pass
+        
+        print("All enabling methods failed")
+        return False
 
-        # Execute state machine to enable motor
-        self._enable_motor()
+    def _set_motion_parameters(self):
+        """Set static motion parameters (500000 for both velocity and acceleration)"""
+        print(f"Setting motion parameters:")
+        print(f"   Velocity: {self.current_velocity:,} counts/sec")
+        print(f"   Acceleration: {self.current_acceleration:,} counts/sec²")
+        print(f"   Deceleration: {self.current_acceleration:,} counts/sec²")
         
-        # Set home position (current position becomes "zero degrees")
-        self.home_position = self._read_register(0x6064, "Position Actual", signed=True)
-        print(f"   Home position set to: {self.home_position} counts")
-
-    def _enable_motor(self):
-        """Execute the EtherCAT state machine to enable motor operation"""
-        print("   Enabling motor operation...")
+        success = True
+        success &= self._safe_write(0x6081, struct.pack('<I', self.current_velocity))
+        success &= self._safe_write(0x6083, struct.pack('<I', self.current_acceleration))
+        success &= self._safe_write(0x6084, struct.pack('<I', self.current_acceleration))
         
-        print("      → Shutdown")
-        self._write_register(0x6040, struct.pack('<H', 0x0006), "Control Word")
+        if not success:
+            print("Warning: Some motion parameters failed to set")
+        
         time.sleep(0.1)
-        self._print_motor_state()
-        
-        print("      → Switch On")
-        self._write_register(0x6040, struct.pack('<H', 0x0007), "Control Word") 
-        time.sleep(0.1)
-        self._print_motor_state()
-        
-        print("      → Operation Enabled")
-        self._write_register(0x6040, struct.pack('<H', 0x000F), "Control Word")
-        time.sleep(0.1)
-        self._print_motor_state()
-        
-        # Verify motor is ready
-        status = self.get_motor_status()
-        if status and status['operation_enabled']:
-            print("      Motor enabled and ready!")
-        else:
-            print("      Motor may not be properly enabled")
 
     # ========================================================================================
     # MOTION CONTROL
     # ========================================================================================
     
-    def set_motion_parameters(self, acceleration=200000, deceleration=200000, max_velocity=100000):
-        """
-        Configure motion parameters for the motor
-        
-        Args:
-            acceleration (int): Acceleration in counts/sec²
-            deceleration (int): Deceleration in counts/sec²
-            max_velocity (int): Maximum velocity in counts/sec
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not self.is_initialized:
-            self.last_error = "Motor not initialized"
-            return False
-        
-        try:
-            print(f"Setting motion parameters:")
-            print(f"   Acceleration: {acceleration:,}")
-            print(f"   Deceleration: {deceleration:,}")
-            print(f"   Max velocity: {max_velocity:,}")
-            
-            self._write_register(0x6083, struct.pack('<I', acceleration), "Profile Acceleration")
-            self._write_register(0x6084, struct.pack('<I', deceleration), "Profile Deceleration")
-            self._write_register(0x6081, struct.pack('<I', max_velocity), "Profile Velocity")
-            time.sleep(0.1)
-            self.last_error = None
-            return True
-            
-        except Exception as e:
-            error_msg = f"Failed to set motion parameters: {str(e)}"
-            print(f"{error_msg}")
-            self.last_error = error_msg
-            return False
-
     def move_to_position(self, degrees, wait_for_completion=True, timeout=30.0):
         """
         Move motor to absolute position in degrees
@@ -185,6 +209,9 @@ class ServoMotorController:
             self.last_error = "Motor not initialized"
             return False
         
+        if not self.motor_enabled:
+            print("Warning: Motor may not be enabled. Attempting move anyway...")
+        
         try:
             self.is_moving = True
             
@@ -195,33 +222,34 @@ class ServoMotorController:
             print(f"Moving to {degrees}° ({target_counts:+,} counts from home)")
             
             # Show current position
-            current_pos = self._read_register(0x6064, "Position Actual", signed=True)
+            current_pos = self._read_position()
             current_degrees = self._counts_to_degrees(current_pos - self.home_position)
             print(f"   Current: {current_degrees:.2f}° ({current_pos:,} counts)")
             print(f"   Target:  {degrees}° ({absolute_target:,} counts)")
             
-            # Verify motor is ready
-            status = self.get_motor_status()
-            if not (status and status['operation_enabled']):
-                print("   Warning: Motor is not in operation enabled state!")
-                self._print_motor_state()
+            # Set target position
+            if not self._safe_write(0x607A, struct.pack('<i', absolute_target)):
+                print("Failed to set target position")
+                self.is_moving = False
+                return False
             
-            # Set target position and trigger motion
-            self._write_register(0x607A, struct.pack('<i', absolute_target), "Target Position")
-            time.sleep(0.05)
-            
-            # Trigger motion by setting "new set-point" bit
-            print("   Starting motion...")
-            self._write_register(0x6040, struct.pack('<H', 0x000F), "Control Word")  # Clear bit 4
-            time.sleep(0.05)
-            self._write_register(0x6040, struct.pack('<H', 0x001F), "Control Word")  # Set bit 4
             time.sleep(0.1)
+            
+            # Trigger move (set new setpoint bit 4)
+            print("   Starting motion...")
+            if self._safe_write(0x6040, struct.pack('<H', 0x001F)):  # Set bit 4
+                time.sleep(0.1)
+                self._safe_write(0x6040, struct.pack('<H', 0x000F))  # Clear bit 4
+            else:
+                print("Failed to trigger motion")
+                self.is_moving = False
+                return False
             
             if wait_for_completion:
                 success = self._wait_for_motion_complete(absolute_target, timeout)
                 self.is_moving = False
                 if success:
-                    final_pos = self._read_register(0x6064, "Position Actual", signed=True)
+                    final_pos = self._read_position()
                     final_degrees = self._counts_to_degrees(final_pos - self.home_position)
                     print(f"Movement completed! Final position: {final_degrees:.2f}°")
                 self.last_error = None
@@ -254,6 +282,7 @@ class ServoMotorController:
         if current_degrees is None:
             return False
         target_degrees = current_degrees + degrees
+        print(f"Moving {degrees:+.1f} degrees (from {current_degrees:.1f} to {target_degrees:.1f})")
         return self.move_to_position(target_degrees, wait_for_completion, timeout)
 
     def go_home(self, wait_for_completion=True):
@@ -263,6 +292,7 @@ class ServoMotorController:
         Returns:
             bool: True if successful
         """
+        print("Returning to home position...")
         return self.move_to_position(0, wait_for_completion)
 
     # ========================================================================================
@@ -279,7 +309,7 @@ class ServoMotorController:
         if not self.is_initialized:
             return None
         try:
-            current_counts = self._read_register(0x6064, "Position Actual", signed=True)
+            current_counts = self._read_position()
             relative_counts = current_counts - self.home_position
             return self._counts_to_degrees(relative_counts)
         except:
@@ -295,7 +325,10 @@ class ServoMotorController:
         if not self.is_initialized:
             return None
         try:
-            status_word = self._read_register(0x6041, "Status Word")
+            status_word = self._read_status()
+            if status_word is None:
+                return None
+                
             return {
                 'status_word': status_word,
                 'ready_to_switch_on': bool(status_word & 0x0001),
@@ -323,10 +356,40 @@ class ServoMotorController:
             'slave_name': self.slave.name if self.slave else None,
             'home_position': self.home_position,
             'current_position': self.get_current_position(),
+            'velocity': self.current_velocity,
+            'acceleration': self.current_acceleration,
             'motor_status': self.get_motor_status(),
+            'motor_enabled': self.motor_enabled,
             'is_moving': self.is_moving,
             'last_error': self.last_error
         }
+
+    def print_status(self):
+        """Print detailed status information"""
+        status = self._read_status()
+        position = self._read_position()
+        degrees = self.get_current_position()
+        
+        print(f"Position: {position:,} counts ({degrees:.2f} degrees)")
+        print(f"Velocity: {self.current_velocity:,} counts/sec")
+        print(f"Acceleration: {self.current_acceleration:,} counts/sec²")
+        print(f"Motor enabled (cached): {self.motor_enabled}")
+        
+        if status:
+            print(f"Status Word: 0x{status:04X}")
+            ready = bool(status & 0x0001)
+            switched_on = bool(status & 0x0002)
+            enabled = bool(status & 0x0004)
+            fault = bool(status & 0x0008)
+            target_reached = bool(status & 0x0400)
+            
+            print(f"Ready: {ready}, Switched On: {switched_on}, Enabled: {enabled}")
+            print(f"Fault: {fault}, Target Reached: {target_reached}")
+            
+            # Update cached status
+            self.motor_enabled = enabled
+        else:
+            print("Could not read status word")
 
     # ========================================================================================
     # SAFETY AND CLEANUP
@@ -342,16 +405,11 @@ class ServoMotorController:
         print("EMERGENCY STOP!")
         if not self.is_initialized:
             return False
-        try:
-            self._write_register(0x6040, struct.pack('<H', 0x0002), "Control Word (Quick Stop)")
-            self.is_moving = False
-            self.last_error = None
-            return True
-        except Exception as e:
-            error_msg = f"Emergency stop failed: {str(e)}"
-            print(f"{error_msg}")
-            self.last_error = error_msg
-            return False
+        result = self._safe_write(0x6040, struct.pack('<H', 0x0002))
+        self.is_moving = False
+        self.motor_enabled = False
+        self.last_error = None
+        return result
 
     def disable_motor(self):
         """
@@ -364,15 +422,28 @@ class ServoMotorController:
         if not self.is_initialized:
             return True
         try:
-            self._write_register(0x6040, struct.pack('<H', 0x0006), "Control Word (Shutdown)")
-            time.sleep(0.05)
+            self._safe_write(0x6040, struct.pack('<H', 0x0006))  # Shutdown
+            time.sleep(0.1)
+            self._safe_write(0x6040, struct.pack('<H', 0x0000))  # Disable voltage
             self.is_moving = False
+            self.motor_enabled = False
             return True
         except Exception as e:
             error_msg = f"Failed to disable motor: {str(e)}"
             print(f"{error_msg}")
             self.last_error = error_msg
             return False
+
+    def re_enable(self):
+        """
+        Re-enable motor if it gets disabled
+        
+        Returns:
+            bool: True if successful
+        """
+        print("Re-enabling motor...")
+        self.motor_enabled = self._try_enable_motor()
+        return self.motor_enabled
 
     def close(self):
         """
@@ -406,52 +477,36 @@ class ServoMotorController:
         """Convert encoder counts to degrees"""
         return (counts * 360.0 * self.gear_ratio) / self.encoder_resolution
 
-    def _read_register(self, address, name="Register", sub=0, signed=False):
-        """
-        Read SDO register with error handling
-        
-        Args:
-            address (int): Register address (e.g., 0x6064)
-            name (str): Human-readable register name for errors
-            sub (int): Sub-index
-            signed (bool): Interpret as signed integer
-            
-        Returns:
-            int or None: Register value or None if error
-        """
+    def _safe_write(self, address, data):
+        """Write to register with error handling"""
         try:
-            data = self.slave.sdo_read(address, sub)
-            return int.from_bytes(data, 'little', signed=signed)
+            self.slave.sdo_write(address, 0, data)
+            return True
         except Exception as e:
-            print(f"Error reading {name} (0x{address:04X}:{sub}): {e}")
-            return None
+            print(f"Write failed 0x{address:04X}: {e}")
+            return False
 
-    def _write_register(self, address, data, name="Register", sub=0):
-        """
-        Write SDO register with error handling
-        
-        Args:
-            address (int): Register address
-            data (bytes): Data to write
-            name (str): Human-readable register name
-            sub (int): Sub-index
-        """
+    def _read_position(self):
+        """Read current position in counts"""
         try:
-            self.slave.sdo_write(address, sub, data)
+            data = self.slave.sdo_read(0x6064, 0)  # Position Actual
+            return int.from_bytes(data, 'little', signed=True)
         except Exception as e:
-            print(f"Error writing {name} (0x{address:04X}:{sub}): {e}")
-            raise
+            print(f"Error reading position: {e}")
+            return self.home_position  # Return home as fallback
 
-    def _print_motor_state(self):
-        """Print brief motor state for debugging"""
-        status_word = self._read_register(0x6041, "Status Word")
-        if status_word:
-            ready = bool(status_word & 0x0001)
-            enabled = bool(status_word & 0x0004)
-            fault = bool(status_word & 0x0008)
-            print(f"         State: 0x{status_word:04X} (Ready:{ready} Enabled:{enabled} Fault:{fault})")
+    def _read_status(self):
+        """Read status word with retry"""
+        for retry in range(3):
+            try:
+                data = self.slave.sdo_read(0x6041, 0)  # Status Word
+                return int.from_bytes(data, 'little', signed=False)
+            except:
+                time.sleep(0.05)
+                continue
+        return None
 
-    def _wait_for_motion_complete(self, target_position, timeout=30.0, tolerance=500):
+    def _wait_for_motion_complete(self, target_position, timeout=30.0, tolerance=1000):
         """
         Wait for motor to reach target position
         
@@ -465,34 +520,27 @@ class ServoMotorController:
         """
         print(f"   Waiting for target: {target_position:,} counts...")
         start_time = time.time()
-        last_position = None
+        last_print_time = 0
         
         while time.time() - start_time < timeout:
             # Read current position
-            current_pos = self._read_register(0x6064, "Position Actual", signed=True)
-            if current_pos is None:
-                continue
+            current_pos = self._read_position()
+            error = abs(target_position - current_pos)
             
-            # Show progress only when position changes significantly
-            if last_position is None or abs(current_pos - last_position) > 1000:
-                error = abs(target_position - current_pos)
-                print(f"      Position: {current_pos:,} (error: {error:,})")
-                last_position = current_pos
+            # Show progress every 2 seconds
+            current_time = time.time()
+            if current_time - last_print_time > 2.0:
+                print(f"      Current: {current_pos:,}, Target: {target_position:,}, Error: {error:,}")
+                last_print_time = current_time
                 
             # Check if within tolerance
-            if abs(target_position - current_pos) <= tolerance:
+            if error < tolerance:
                 print("   Target position reached!")
-                return True
-                
-            # Check status word for target reached flag
-            status_word = self._read_register(0x6041, "Status Word")
-            if status_word and (status_word & 0x0400):  # bit 10: target reached
-                print("   Motor reports target reached!")
                 return True
                 
             time.sleep(0.1)
         
         # Timeout occurred
-        final_pos = self._read_register(0x6064, "Position Actual", signed=True)
+        final_pos = self._read_position()
         print(f"   Timeout! Final position: {final_pos:,}, Target: {target_position:,}")
         return False
