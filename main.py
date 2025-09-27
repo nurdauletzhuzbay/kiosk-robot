@@ -92,7 +92,7 @@ class Config:
     
     # Arduino communication settings
     ARDUINO_SETTINGS = {
-        'port': '/dev/ttyUSB0',
+        'port': '/dev/ttyACM0',
         'baudrate': 9600,
         'timeout': 1
     }
