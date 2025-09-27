@@ -57,8 +57,7 @@ class Config:
         'robot_gripper_rotate_left': 'kiosk/robot/gripper/rotate_left',
         'robot_gripper_rotate_center': 'kiosk/robot/gripper/rotate_center',
         'robot_gripper_rotate_right': 'kiosk/robot/gripper/rotate_right',
-        'robot_gripper_up': 'kiosk/robot/gripper/up',
-        'robot_gripper_down': 'kiosk/robot/gripper/down',
+        'robot_gripper_vertical': 'kiosk/robot/gripper/vertical',
         
         # QR/Pickup point topics - SIMPLIFIED
         'pickup_box_request': 'kiosk/pickup/box_request',  # Receive QR scan requests
@@ -98,8 +97,7 @@ class Config:
     }
     
     # Gripper movement degrees (PLACEHOLDERS - adjust based on your system)
-    GRIPPER_UP_DEGREES = 45      # How much to move up
-    GRIPPER_DOWN_DEGREES = 45    # How much to move down
+    GRIPPER_VERTICAL_DEFAULT = 45  # Default vertical movement degrees
     
     # Status reporting intervals (seconds)
     STATUS_INTERVAL = 2.0
@@ -209,8 +207,7 @@ class MQTTRobotController:
             self.config.TOPICS['robot_gripper_rotate_left'],
             self.config.TOPICS['robot_gripper_rotate_center'],
             self.config.TOPICS['robot_gripper_rotate_right'],
-            self.config.TOPICS['robot_gripper_up'],
-            self.config.TOPICS['robot_gripper_down'],
+            self.config.TOPICS['robot_gripper_vertical'],
             
             # Pickup and drone topics
             self.config.TOPICS['pickup_box_request'],
@@ -277,10 +274,8 @@ class MQTTRobotController:
             self._handle_gripper_rotate_center(data)
         elif topic == self.config.TOPICS['robot_gripper_rotate_right']:
             self._handle_gripper_rotate_right(data)
-        elif topic == self.config.TOPICS['robot_gripper_up']:
-            self._handle_gripper_up(data)
-        elif topic == self.config.TOPICS['robot_gripper_down']:
-            self._handle_gripper_down(data)
+        elif topic == self.config.TOPICS['robot_gripper_vertical']:
+            self._handle_gripper_vertical(data)
         
         # Pickup and drone workflows
         elif topic == self.config.TOPICS['pickup_box_request']:
@@ -434,15 +429,10 @@ class MQTTRobotController:
         """Handle gripper rotate right command"""
         self._send_arduino_command("robot_gripper_rotate_right")
     
-    def _handle_gripper_up(self, data):
-        """Handle gripper up command with degrees"""
-        degrees = data.get('degrees', self.config.GRIPPER_UP_DEGREES)
-        self._send_arduino_command(f"robot_gripper_up_{degrees}")
-    
-    def _handle_gripper_down(self, data):
-        """Handle gripper down command with degrees"""
-        degrees = data.get('degrees', self.config.GRIPPER_DOWN_DEGREES)
-        self._send_arduino_command(f"robot_gripper_down_{degrees}")
+    def _handle_gripper_vertical(self, data):
+        """Handle gripper vertical movement command with absolute degrees"""
+        degrees = data.get('degrees', self.config.GRIPPER_VERTICAL_DEFAULT)
+        self._send_arduino_command(f"robot_vertical_{degrees}")
 
     # ========================================================================================
     # DRONE WORKFLOW HANDLERS
@@ -476,9 +466,9 @@ class MQTTRobotController:
                 raise Exception("Failed to reach drone pickup position")
             time.sleep(0.5)
             
-            # Step 2: Gripper up
-            self.logger.info("Step 2: Gripper up")
-            self._send_arduino_command(f"robot_gripper_up_{self.config.GRIPPER_UP_DEGREES}")
+            # Step 2: Gripper vertical to pickup height
+            self.logger.info("Step 2: Gripper vertical to pickup height")
+            self._send_arduino_command(f"robot_vertical_1800")  # Example: move to 1800 degrees
             time.sleep(1.0)
             
             self.operational_state = "ready_for_box"
@@ -519,7 +509,7 @@ class MQTTRobotController:
             time.sleep(1.0)
             self._send_arduino_command("robot_gripper_slide_backward")
             time.sleep(1.0)
-            self._send_arduino_command(f"robot_gripper_down_{self.config.GRIPPER_DOWN_DEGREES}")
+            self._send_arduino_command(f"robot_vertical_0")  # Return to home position
             time.sleep(1.0)
             
             storage_pos = self.config.POSITIONS['storage_shelf']
@@ -694,7 +684,10 @@ class MQTTRobotController:
                 self.logger.info("EtherCAT servo connected and configured")
                 
                 # Setup Arduino connection
-                self._setup_arduino_connection()
+                if self._setup_arduino_connection():
+                    # Perform homing sequence
+                    self.logger.info("Performing initialization homing sequence...")
+                    self._perform_homing_sequence()
                 
                 return True
             
@@ -703,6 +696,31 @@ class MQTTRobotController:
         except Exception as e:
             self.logger.error(f"Motor connection failed: {e}")
             return False
+
+    def _perform_homing_sequence(self):
+        """Perform homing sequence for gripper and horizontal axis"""
+        try:
+            self.logger.info("Starting homing sequence...")
+            
+            # Step 1: Home gripper (Arduino)
+            self.logger.info("Step 1: Homing gripper")
+            self._send_arduino_command("robot_gripper_home")
+            time.sleep(2.0)  # Wait for gripper to home
+            
+            # Step 2: Home horizontal axis (EtherCAT servo)
+            self.logger.info("Step 2: Homing horizontal axis")
+            success = self.servo_controller.go_home(wait_for_completion=True)
+            
+            if success:
+                self.logger.info("Homing sequence completed successfully")
+                self.operational_state = "idle"
+            else:
+                self.logger.warning("Horizontal homing may have failed")
+                self.operational_state = "error"
+                
+        except Exception as e:
+            self.logger.error(f"Homing sequence failed: {e}")
+            self.operational_state = "error"
 
     def _disconnect_motor(self):
         """Disconnect from all motor systems"""
