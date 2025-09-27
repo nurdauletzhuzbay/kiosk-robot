@@ -84,7 +84,7 @@ class Config:
     # Predefined positions (in degrees) - PLACEHOLDERS
     POSITIONS = {
         'home': 0,              # Home/rest position
-        'pickup_shelf': 500,     # Position to pickup box from shelf (PLACEHOLDER)
+        'pickup_shelf': 90,     # Position to pickup box from shelf (PLACEHOLDER)
         'delivery': 180,        # Position to deliver box to customer (PLACEHOLDER)
         'drone_pickup': 270,    # Position to pickup box from drone port (PLACEHOLDER)
         'storage_shelf': 135,   # Position to store box on shelf (PLACEHOLDER)
@@ -92,7 +92,7 @@ class Config:
     
     # Arduino communication settings
     ARDUINO_SETTINGS = {
-        'port': '/dev/ttyACM0',
+        'port': '/dev/ttyUSB0',
         'baudrate': 9600,
         'timeout': 1
     }
@@ -155,7 +155,17 @@ class MQTTRobotController:
         """Initialize and configure MQTT client"""
         self.logger.info("Setting up MQTT connection...")
         
-        self.mqtt_client = mqtt.Client(self.config.CLIENT_ID)
+        # Check paho-mqtt version and create client accordingly
+        try:
+            # For paho-mqtt >= 2.0.0
+            self.mqtt_client = mqtt.Client(
+                callback_api_version=mqtt.CallbackAPIVersion.VERSION1,
+                client_id=self.config.CLIENT_ID
+            )
+        except (AttributeError, TypeError):
+            # For paho-mqtt < 2.0.0
+            self.mqtt_client = mqtt.Client(self.config.CLIENT_ID)
+        
         self.mqtt_client.on_connect = self._on_mqtt_connect
         self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
         self.mqtt_client.on_message = self._on_mqtt_message
