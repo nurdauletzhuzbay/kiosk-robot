@@ -572,45 +572,50 @@ class MQTTRobotController:
     def _execute_pickup_delivery_sequence(self, box_id):
         """Execute complete pickup and delivery sequence"""
         try:
-            self.logger.info(f"Starting pickup-delivery sequence for box {box_id}")
+            self.logger.info(f"[SEQ] === Starting pickup-delivery sequence for box {box_id} ===")
 
             # Move to pickup position
             pickup_pos = self.config.POSITIONS['pickup_shelf']
+            self.logger.info(f"[SEQ] Moving to pickup position → {pickup_pos}")
             self.servo_controller.move_to_position(pickup_pos, True, 30.0)
 
-            # Sequence with confirmation instead of sleep
-            if not self._send_arduino_command_and_wait("robot_vertical_4800"): return
+            # Sequence with confirmations
+            if not self._send_arduino_command_and_wait("robot_vertical_1200"): return
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_left"): return
             if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
             # if not self._send_arduino_command_and_wait("robot_gripper_close"): return
             if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
 
-            # Move to delivery
-            delivery_pos = self.config.POSITIONS['delivery']
-            self.servo_controller.move_to_position(delivery_pos, True, 30.0)
+            # # Move to delivery
+            # delivery_pos = self.config.POSITIONS['delivery']
+            # self.logger.info(f"[SEQ] Moving to delivery position → {delivery_pos}")
+            # self.servo_controller.move_to_position(delivery_pos, True, 30.0)
 
-            if not self._send_arduino_command_and_wait("robot_vertical_500"): return
-            if not self._send_arduino_command_and_wait("robot_gripper_rotate_right"): return
-            if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
-            # if not self._send_arduino_command_and_wait("robot_gripper_open"): return
+            # if not self._send_arduino_command_and_wait("robot_vertical_500"): return
+            # if not self._send_arduino_command_and_wait("robot_gripper_rotate_right"): return
+            # if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
+            # # if not self._send_arduino_command_and_wait("robot_gripper_open"): return
 
-            self._publish_box_delivered(box_id)
+            # self._publish_box_delivered(box_id)
+            # self.logger.info(f"[SEQ] 📦 Box {box_id} delivered")
 
-            if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
-            if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
-            if not self._send_arduino_command_and_wait("robot_vertical_0"): return
+            # if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
+            # if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
+            # if not self._send_arduino_command_and_wait("robot_vertical_0"): return
 
-            self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
+            # self.logger.info(f"[SEQ] Returning to home position")
+            # self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
 
-            self.operational_state = "idle"
-            self.current_box_id = None
-            self.logger.info(f"Pickup-delivery sequence completed for box {box_id}")
+            # self.operational_state = "idle"
+            # self.current_box_id = None
+            # self.logger.info(f"[SEQ] === Pickup-delivery sequence completed for box {box_id} ===")
 
         except Exception as e:
-            self.logger.error(f"Pickup-delivery sequence failed: {e}")
+            self.logger.error(f"[SEQ] ❌ Pickup-delivery sequence failed: {e}")
             self.operational_state = "error"
             self._publish_error(f"Pickup-delivery failed: {str(e)}")
+
 
 
     # ========================================================================================
@@ -654,7 +659,7 @@ class MQTTRobotController:
             self.logger.error(f"Arduino command failed: {e}")
             return False
         
-    def _send_arduino_command_and_wait(self, command, expected_response="true", timeout=10.0):
+    def _send_arduino_command_and_wait(self, command, expected_response="true", timeout=60.0):
         """Send command to Arduino and wait until expected response is received"""
         try:
             if not self.arduino:
@@ -663,20 +668,23 @@ class MQTTRobotController:
 
             command_string = f"{command}\n"
             self.arduino.write(command_string.encode())
-            self.logger.info(f"Sent to Arduino: {command}")
+            self.logger.info(f"[SEQ] Command sent → {command}")
 
             start_time = time.time()
             while time.time() - start_time < timeout:
-                response = self.arduino.readline().decode().strip().lower()
+                response = self.arduino.readline().decode().strip()
                 if response:
-                    self.logger.info(f"Arduino response: {response}")
-                    if expected_response.lower() in response:
+                    self.logger.info(f"[SEQ] Response received ← {response}")
+                    if expected_response.lower() in response.lower():
+                        self.logger.info(f"[SEQ] ✅ Confirmation received for {command}")
                         return True
-            self.logger.error(f"Timeout waiting for Arduino confirmation on {command}")
+
+            self.logger.error(f"[SEQ] ❌ Timeout waiting for confirmation on {command}")
             return False
         except Exception as e:
-            self.logger.error(f"Arduino command wait failed: {e}")
+            self.logger.error(f"[SEQ] ⚠️ Arduino command wait failed: {e}")
             return False
+
 
 
     # ========================================================================================
