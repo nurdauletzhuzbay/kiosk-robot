@@ -617,9 +617,6 @@ class MQTTRobotController:
             if not self._send_arduino_command_and_wait("robot_gripper_open"): return
             time.sleep(1)
 
-            self._publish_box_delivered(box_id)
-            # self.logger.info(f"[SEQ] 📦 Box {box_id} delivered")
-
             if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
             time.sleep(1)
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
@@ -628,6 +625,9 @@ class MQTTRobotController:
 
             # self.logger.info(f"[SEQ] Returning to home position")
             self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
+            self._publish_box_delivered(box_id)
+            self.logger.info(f"[SEQ] 📦 Box {box_id} delivered")
+            
 
             # self.operational_state = "idle"
             # self.current_box_id = None
