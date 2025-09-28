@@ -615,7 +615,7 @@ class MQTTRobotController:
             if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
             time.sleep(1)
             if not self._send_arduino_command_and_wait("robot_gripper_open"): return
-            time.sleep(1)
+            time.sleep(5)
 
             if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
             time.sleep(1)
