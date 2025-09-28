@@ -583,31 +583,31 @@ class MQTTRobotController:
             if not self._send_arduino_command_and_wait("robot_vertical_1200"): return
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_left"): return
             if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
-            # if not self._send_arduino_command_and_wait("robot_gripper_close"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_close"): return
             if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
 
-            if not self._send_arduino_command_and_wait("robot_vertical_1200"): return
+            if not self._send_arduino_command_and_wait("robot_vertical_0"): return
 
             # # Move to delivery
             delivery_pos = self.config.POSITIONS['delivery']
             self.logger.info(f"[SEQ] Moving to delivery position → {delivery_pos}")
             self.servo_controller.move_to_position(delivery_pos, True, 30.0)
 
-            # if not self._send_arduino_command_and_wait("robot_vertical_500"): return
-            # if not self._send_arduino_command_and_wait("robot_gripper_rotate_right"): return
-            # if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
-            # # if not self._send_arduino_command_and_wait("robot_gripper_open"): return
+            if not self._send_arduino_command_and_wait("robot_vertical_500"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_rotate_right"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_open"): return
 
-            # self._publish_box_delivered(box_id)
+            self._publish_box_delivered(box_id)
             # self.logger.info(f"[SEQ] 📦 Box {box_id} delivered")
 
-            # if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
-            # if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
-            # if not self._send_arduino_command_and_wait("robot_vertical_0"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
+            if not self._send_arduino_command_and_wait("robot_vertical_0"): return
 
             # self.logger.info(f"[SEQ] Returning to home position")
-            # self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
+            self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
 
             # self.operational_state = "idle"
             # self.current_box_id = None
