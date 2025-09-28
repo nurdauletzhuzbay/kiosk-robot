@@ -764,6 +764,8 @@ class MQTTRobotController:
                 self.servo_controller = None
             
             if self.arduino:
+                self._send_arduino_command("robot_gripper_slide_disable")
+                self._send_arduino_command("robot_gripper_rotate_disable")
                 self.arduino.close()
                 self.arduino = None
             
