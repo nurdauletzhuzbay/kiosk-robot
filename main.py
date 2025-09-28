@@ -573,57 +573,45 @@ class MQTTRobotController:
         """Execute complete pickup and delivery sequence"""
         try:
             self.logger.info(f"Starting pickup-delivery sequence for box {box_id}")
-            
-            # Full sequence (17 steps as documented in original code)
+
+            # Move to pickup position
             pickup_pos = self.config.POSITIONS['pickup_shelf']
             self.servo_controller.move_to_position(pickup_pos, True, 30.0)
-            time.sleep(0.5)
-            
-            self._send_arduino_command(f"robot_vertical_4800")
-            time.sleep(8.0)
-            self._send_arduino_command("robot_gripper_rotate_left")
-            time.sleep(5.0)
-            self._send_arduino_command("robot_gripper_slide_forward")
-            time.sleep(5.0)
-            # self._send_arduino_command("robot_gripper_close")
-            time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_slide_backward")
-            time.sleep(5.0)
-            self._send_arduino_command("robot_gripper_rotate_center")
-            time.sleep(5.0)
-            
+
+            # Sequence with confirmation instead of sleep
+            if not self._send_arduino_command_and_wait("robot_vertical_4800"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_rotate_left"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
+            # if not self._send_arduino_command_and_wait("robot_gripper_close"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
+
+            # Move to delivery
             delivery_pos = self.config.POSITIONS['delivery']
             self.servo_controller.move_to_position(delivery_pos, True, 30.0)
-            time.sleep(0.5)
-            
-            self._send_arduino_command(f"robot_vertical_500")
-            time.sleep(8.0)
-            self._send_arduino_command("robot_gripper_rotate_right")
-            time.sleep(5.0)
-            self._send_arduino_command("robot_gripper_slide_forward")
-            time.sleep(5.0)
-            # self._send_arduino_command("robot_gripper_open")
-            time.sleep(1.0)
-            
+
+            if not self._send_arduino_command_and_wait("robot_vertical_500"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_rotate_right"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
+            # if not self._send_arduino_command_and_wait("robot_gripper_open"): return
+
             self._publish_box_delivered(box_id)
-            
-            self._send_arduino_command("robot_gripper_slide_backward")
-            time.sleep(5.0)
-            self._send_arduino_command("robot_gripper_rotate_center")
-            time.sleep(5.0)
-            self._send_arduino_command("robot_vertical_0")
-            time.sleep(5.0)
-            
+
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
+            if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
+            if not self._send_arduino_command_and_wait("robot_vertical_0"): return
+
             self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
-            
+
             self.operational_state = "idle"
             self.current_box_id = None
             self.logger.info(f"Pickup-delivery sequence completed for box {box_id}")
-            
+
         except Exception as e:
             self.logger.error(f"Pickup-delivery sequence failed: {e}")
             self.operational_state = "error"
             self._publish_error(f"Pickup-delivery failed: {str(e)}")
+
 
     # ========================================================================================
     # ARDUINO COMMUNICATION
@@ -665,6 +653,31 @@ class MQTTRobotController:
         except Exception as e:
             self.logger.error(f"Arduino command failed: {e}")
             return False
+        
+    def _send_arduino_command_and_wait(self, command, expected_response="true", timeout=10.0):
+        """Send command to Arduino and wait until expected response is received"""
+        try:
+            if not self.arduino:
+                self.logger.error("Arduino not connected")
+                return False
+
+            command_string = f"{command}\n"
+            self.arduino.write(command_string.encode())
+            self.logger.info(f"Sent to Arduino: {command}")
+
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                response = self.arduino.readline().decode().strip().lower()
+                if response:
+                    self.logger.info(f"Arduino response: {response}")
+                    if expected_response.lower() in response:
+                        return True
+            self.logger.error(f"Timeout waiting for Arduino confirmation on {command}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Arduino command wait failed: {e}")
+            return False
+
 
     # ========================================================================================
     # MOTOR CONTROL METHODS
