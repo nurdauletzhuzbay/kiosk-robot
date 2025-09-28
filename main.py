@@ -580,7 +580,7 @@ class MQTTRobotController:
             self.servo_controller.move_to_position(pickup_pos, True, 30.0)
 
             # Sequence with confirmations
-            if not self._send_arduino_command_and_wait("robot_vertical_800"): return
+            if not self._send_arduino_command_and_wait("robot_vertical_830"): return
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_left"): return
             if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
             time.sleep(5)
@@ -615,7 +615,6 @@ class MQTTRobotController:
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
             time.sleep(5)
             if not self._send_arduino_command_and_wait("robot_vertical_0"): return
-            time.sleep(5)
 
             # self.logger.info(f"[SEQ] Returning to home position")
             self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
