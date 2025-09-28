@@ -587,10 +587,12 @@ class MQTTRobotController:
             if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
 
+            if not self._send_arduino_command_and_wait("robot_vertical_1200"): return
+
             # # Move to delivery
-            # delivery_pos = self.config.POSITIONS['delivery']
-            # self.logger.info(f"[SEQ] Moving to delivery position → {delivery_pos}")
-            # self.servo_controller.move_to_position(delivery_pos, True, 30.0)
+            delivery_pos = self.config.POSITIONS['delivery']
+            self.logger.info(f"[SEQ] Moving to delivery position → {delivery_pos}")
+            self.servo_controller.move_to_position(delivery_pos, True, 30.0)
 
             # if not self._send_arduino_command_and_wait("robot_vertical_500"): return
             # if not self._send_arduino_command_and_wait("robot_gripper_rotate_right"): return
