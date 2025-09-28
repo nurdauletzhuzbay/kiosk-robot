@@ -83,8 +83,8 @@ class Config:
     # Predefined positions (in degrees) - PLACEHOLDERS
     POSITIONS = {
         'home': 0,              # Home/rest position
-        'pickup_shelf': 90,     # Position to pickup box from shelf (PLACEHOLDER)
-        'delivery': 180,        # Position to deliver box to customer (PLACEHOLDER)
+        'pickup_shelf': 500,     # Position to pickup box from shelf (PLACEHOLDER)
+        'delivery': 1500,        # Position to deliver box to customer (PLACEHOLDER)
         'drone_pickup': 270,    # Position to pickup box from drone port (PLACEHOLDER)
         'storage_shelf': 135,   # Position to store box on shelf (PLACEHOLDER)
     }
@@ -97,7 +97,7 @@ class Config:
     }
     
     # Gripper movement degrees (PLACEHOLDERS - adjust based on your system)
-    GRIPPER_VERTICAL_DEFAULT = 45  # Default vertical movement degrees
+    GRIPPER_VERTICAL_DEFAULT = 0  # Default vertical movement degrees
     
     # Status reporting intervals (seconds)
     STATUS_INTERVAL = 2.0
@@ -579,40 +579,40 @@ class MQTTRobotController:
             self.servo_controller.move_to_position(pickup_pos, True, 30.0)
             time.sleep(0.5)
             
-            self._send_arduino_command(f"robot_gripper_up_{self.config.GRIPPER_UP_DEGREES}")
-            time.sleep(1.0)
+            self._send_arduino_command(f"robot_vertical_4800")
+            time.sleep(8.0)
             self._send_arduino_command("robot_gripper_rotate_left")
-            time.sleep(1.0)
+            time.sleep(5.0)
             self._send_arduino_command("robot_gripper_slide_forward")
-            time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_close")
+            time.sleep(5.0)
+            # self._send_arduino_command("robot_gripper_close")
             time.sleep(1.0)
             self._send_arduino_command("robot_gripper_slide_backward")
-            time.sleep(1.0)
+            time.sleep(5.0)
             self._send_arduino_command("robot_gripper_rotate_center")
-            time.sleep(1.0)
+            time.sleep(5.0)
             
             delivery_pos = self.config.POSITIONS['delivery']
             self.servo_controller.move_to_position(delivery_pos, True, 30.0)
             time.sleep(0.5)
             
-            self._send_arduino_command(f"robot_gripper_down_{self.config.GRIPPER_DOWN_DEGREES}")
-            time.sleep(1.0)
+            self._send_arduino_command(f"robot_vertical_500")
+            time.sleep(8.0)
             self._send_arduino_command("robot_gripper_rotate_right")
-            time.sleep(1.0)
+            time.sleep(5.0)
             self._send_arduino_command("robot_gripper_slide_forward")
-            time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_open")
+            time.sleep(5.0)
+            # self._send_arduino_command("robot_gripper_open")
             time.sleep(1.0)
             
             self._publish_box_delivered(box_id)
             
             self._send_arduino_command("robot_gripper_slide_backward")
-            time.sleep(1.0)
+            time.sleep(5.0)
             self._send_arduino_command("robot_gripper_rotate_center")
-            time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_home")
-            time.sleep(1.0)
+            time.sleep(5.0)
+            self._send_arduino_command("robot_vertical_0")
+            time.sleep(5.0)
             
             self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
             
