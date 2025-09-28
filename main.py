@@ -58,6 +58,7 @@ class Config:
         'robot_gripper_rotate_center': 'kiosk/robot/gripper/rotate_center',
         'robot_gripper_rotate_right': 'kiosk/robot/gripper/rotate_right',
         'robot_gripper_vertical': 'kiosk/robot/gripper/vertical',
+        'robot_gripper_slide_disable': 'kiosk/robot/gripper/slide_disable',
         
         # QR/Pickup point topics - SIMPLIFIED
         'pickup_box_request': 'kiosk/pickup/box_request',  # Receive QR scan requests
@@ -66,7 +67,7 @@ class Config:
         # Drone coordination topics
         'drone_ready_to_land': 'kiosk/drone/ready_to_land',
         'box_ready_for_pickup': 'kiosk/drone_port/box_ready',
-        'box_stored': 'kiosk/robot/box_stored',  # Publish when box stored
+        'box_retrieved': 'kiosk/robot/box_retrieved',  # Publish when box stored
         
         # System-wide topics
         'emergency_stop': 'kiosk/emergency/stop'
@@ -85,7 +86,7 @@ class Config:
         'home': 0,              # Home/rest position
         'pickup_shelf': 500,     # Position to pickup box from shelf (PLACEHOLDER)
         'delivery': 1500,        # Position to deliver box to customer (PLACEHOLDER)
-        'drone_pickup': 270,    # Position to pickup box from drone port (PLACEHOLDER)
+        'drone_pickup': 250,    # Position to pickup box from drone port (PLACEHOLDER)
         'storage_shelf': 135,   # Position to store box on shelf (PLACEHOLDER)
     }
     
@@ -208,6 +209,8 @@ class MQTTRobotController:
             self.config.TOPICS['robot_gripper_rotate_center'],
             self.config.TOPICS['robot_gripper_rotate_right'],
             self.config.TOPICS['robot_gripper_vertical'],
+            self.config.TOPICS['robot_gripper_slide_disable'],
+
             
             # Pickup and drone topics
             self.config.TOPICS['pickup_box_request'],
@@ -276,6 +279,8 @@ class MQTTRobotController:
             self._handle_gripper_rotate_right(data)
         elif topic == self.config.TOPICS['robot_gripper_vertical']:
             self._handle_gripper_vertical(data)
+        elif topic == self.config.TOPICS['robot_gripper_slide_disable']:
+            self._handle_gripper_slide_disable(data)
         
         # Pickup and drone workflows
         elif topic == self.config.TOPICS['pickup_box_request']:
@@ -433,11 +438,15 @@ class MQTTRobotController:
         """Handle gripper vertical movement command with absolute degrees"""
         degrees = data.get('degrees', self.config.GRIPPER_VERTICAL_DEFAULT)
         self._send_arduino_command(f"robot_vertical_{degrees}")
+        
+    def _handle_gripper_slide_disable(self, data):
+        """Handle gripper vertical movement command with absolute degrees"""
+        self._send_arduino_command(f"robot_gripper_slide_disable")
 
     # ========================================================================================
     # DRONE WORKFLOW HANDLERS
     # ========================================================================================
-    
+
     def _handle_drone_ready_to_land(self, data):
         """Handle drone ready to land notification"""
         try:
@@ -468,7 +477,7 @@ class MQTTRobotController:
             
             # Step 2: Gripper vertical to pickup height
             self.logger.info("Step 2: Gripper vertical to pickup height")
-            self._send_arduino_command(f"robot_vertical_1800")  # Example: move to 1800 degrees
+            if not self._send_arduino_command_and_wait("robot_vertical_7850"): return
             time.sleep(1.0)
             
             self.operational_state = "ready_for_box"
@@ -503,7 +512,7 @@ class MQTTRobotController:
             self.logger.info(f"Starting drone pickup-storage sequence for {box_id}")
             
             # Full sequence as before
-            self._send_arduino_command("robot_gripper_slide_forward")
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
             time.sleep(1.0)
             self._send_arduino_command("robot_gripper_close")
             time.sleep(1.0)
@@ -512,12 +521,13 @@ class MQTTRobotController:
             self._send_arduino_command(f"robot_vertical_0")  # Return to home position
             time.sleep(1.0)
             
-            storage_pos = self.config.POSITIONS['storage_shelf']
+            storage_pos = self.config.POSITIONS['home']
             success = self.servo_controller.move_to_position(storage_pos, True, 30.0)
             if not success:
                 raise Exception("Failed to reach storage position")
             time.sleep(0.5)
-            
+            self._send_arduino_command(f"robot_vertical_0")  # Return to home position
+            time.sleep(1.0)
             self._send_arduino_command("robot_gripper_rotate_left")
             time.sleep(1.0)
             self._send_arduino_command("robot_gripper_slide_forward")
@@ -531,7 +541,7 @@ class MQTTRobotController:
             self._send_arduino_command("robot_gripper_home")
             time.sleep(1.0)
             
-            self._publish_box_stored(box_id)
+            self._publish_box_retrieved(box_id)
             self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
             
             self.operational_state = "idle"
@@ -815,7 +825,7 @@ class MQTTRobotController:
         self._publish_json(self.config.TOPICS['pickup_box_delivered'], message)
         self.logger.info(f"Box delivered notification sent for {box_id}")
     
-    def _publish_box_stored(self, box_id):
+    def _publish_box_retrieved(self, box_id):
         """Publish box stored notification"""
         message = {
             'timestamp': datetime.now().isoformat(),
@@ -823,7 +833,7 @@ class MQTTRobotController:
             'status': 'stored',
             'position': 'storage_shelf'
         }
-        self._publish_json(self.config.TOPICS['box_stored'], message)
+        self._publish_json(self.config.TOPICS['box_retrieved'], message)
         self.logger.info(f"Box stored notification sent for {box_id}")
 
     def _publish_status_now(self):
