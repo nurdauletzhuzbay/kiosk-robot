@@ -514,11 +514,11 @@ class MQTTRobotController:
             # Full sequence as before
             if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
             time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_close")
+            if not self._send_arduino_command_and_wait("robot_gripper_close"): return
             time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_slide_backward")
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
             time.sleep(1.0)
-            self._send_arduino_command(f"robot_vertical_0")  # Return to home position
+            if not self._send_arduino_command_and_wait(f"robot_vertical_0"): return  # Return to home position
             time.sleep(1.0)
             
             storage_pos = self.config.POSITIONS['home']
@@ -526,19 +526,19 @@ class MQTTRobotController:
             if not success:
                 raise Exception("Failed to reach storage position")
             time.sleep(0.5)
-            self._send_arduino_command(f"robot_vertical_0")  # Return to home position
+            if not self._send_arduino_command_and_wait(f"robot_vertical_4400"): return  # Return to home position
             time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_rotate_left")
+            if not self._send_arduino_command_and_wait("robot_gripper_rotate_left"): return
             time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_slide_forward")
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
             time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_open")
+            if not self._send_arduino_command_and_wait("robot_gripper_open"): return
             time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_slide_backward")
+            if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
             time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_rotate_center")
+            if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
             time.sleep(1.0)
-            self._send_arduino_command("robot_gripper_home")
+            if not self._send_arduino_command_and_wait("robot_gripper_home"): return
             time.sleep(1.0)
             
             self._publish_box_retrieved(box_id)
