@@ -721,7 +721,7 @@ class MQTTRobotController:
                 if self._setup_arduino_connection():
                     # Perform homing sequence
                     self.logger.info("Performing initialization homing sequence...")
-                    self._perform_homing_sequence()
+                    # self._perform_homing_sequence()
                 
                 return True
             
