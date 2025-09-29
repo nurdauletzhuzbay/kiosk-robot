@@ -47,6 +47,7 @@ class Config:
         'robot_home': 'kiosk/robot/home',
         'robot_stop': 'kiosk/robot/stop',
         'robot_connect': 'kiosk/robot/connect',
+        'robot_demo': 'kiosk/robot/demo',  # ADDED FOR DEMO
         
         # Robot gripper control topics
         'robot_gripper_home': 'kiosk/robot/gripper/home',
@@ -198,6 +199,7 @@ class MQTTRobotController:
             self.config.TOPICS['robot_home'],
             self.config.TOPICS['robot_stop'],
             self.config.TOPICS['robot_connect'],
+            self.config.TOPICS['robot_demo'],  # ADDED FOR DEMO
             
             # Gripper control topics
             self.config.TOPICS['robot_gripper_home'],
@@ -259,6 +261,8 @@ class MQTTRobotController:
             self._handle_connect_command(data)
         elif topic == self.config.TOPICS['robot_commands']:
             self._handle_general_command(data)
+        elif topic == self.config.TOPICS['robot_demo']:  # ADDED FOR DEMO
+            self._handle_demo_sequence(data)
         
         # Gripper control commands
         elif topic == self.config.TOPICS['robot_gripper_home']:
@@ -397,6 +401,67 @@ class MQTTRobotController:
             self._publish_emergency_response()
         except Exception as e:
             self.logger.error(f"Emergency stop failed: {e}")
+
+    # ========================================================================================
+    # DEMO SEQUENCE HANDLER - NEW
+    # ========================================================================================
+    
+    def _handle_demo_sequence(self, data):
+        """Handle demo sequence request"""
+        try:
+            self.logger.info("Demo sequence requested")
+            self.operational_state = "demo_running"
+            
+            threading.Thread(
+                target=self._execute_demo_sequence,
+                daemon=True
+            ).start()
+            
+        except Exception as e:
+            self.logger.error(f"Demo sequence handling failed: {e}")
+            self._publish_error(f"Demo sequence failed: {str(e)}")
+
+    def _execute_demo_sequence(self):
+        """Execute complete demo sequence"""
+        try:
+            self.logger.info("[DEMO] === Starting demo sequence ===")
+            
+            # Step 1: Gripper home
+            self.logger.info("[DEMO] Step 1: Gripper home")
+            self._send_arduino_command("robot_gripper_home")
+            
+            # Step 2: Wait 10 seconds
+            self.logger.info("[DEMO] Step 2: Waiting 10 seconds")
+            time.sleep(65.0)
+            
+            # Step 3: Move to position 1500
+            self.logger.info("[DEMO] Step 3: Moving to position 1500")
+            if not self.servo_controller or not self.servo_controller.is_initialized:
+                raise Exception("Motor not connected")
+            
+            success = self.servo_controller.move_to_position(1500, True, 30.0)
+            if not success:
+                raise Exception("Failed to move to position 1500")
+            
+            # Step 4: Return home
+            self.logger.info("[DEMO] Step 4: Returning to home position")
+            home_pos = self.config.POSITIONS['home']
+            success = self.servo_controller.move_to_position(home_pos, True, 30.0)
+            if not success:
+                raise Exception("Failed to return home")
+            
+            # Step 5: Publish box delivered
+            self.logger.info("[DEMO] Step 5: Publishing box delivered notification")
+            demo_box_id = f"DEMO_BOX_{int(time.time())}"
+            self._publish_box_delivered(demo_box_id)
+            
+            self.operational_state = "idle"
+            self.logger.info("[DEMO] === Demo sequence completed successfully ===")
+            
+        except Exception as e:
+            self.logger.error(f"[DEMO] Demo sequence failed: {e}")
+            self.operational_state = "error"
+            self._publish_error(f"Demo sequence failed: {str(e)}")
 
     # ========================================================================================
     # GRIPPER CONTROL HANDLERS (MQTT Topics)
@@ -626,7 +691,7 @@ class MQTTRobotController:
             # self.logger.info(f"[SEQ] Returning to home position")
             self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
             self._publish_box_delivered(box_id)
-            self.logger.info(f"[SEQ] 📦 Box {box_id} delivered")
+            self.logger.info(f"[SEQ] Box {box_id} delivered")
             
 
             # self.operational_state = "idle"
@@ -634,7 +699,7 @@ class MQTTRobotController:
             # self.logger.info(f"[SEQ] === Pickup-delivery sequence completed for box {box_id} ===")
 
         except Exception as e:
-            self.logger.error(f"[SEQ] ❌ Pickup-delivery sequence failed: {e}")
+            self.logger.error(f"[SEQ] Pickup-delivery sequence failed: {e}")
             self.operational_state = "error"
             self._publish_error(f"Pickup-delivery failed: {str(e)}")
 
@@ -698,13 +763,13 @@ class MQTTRobotController:
                 if response:
                     self.logger.info(f"[SEQ] Response received ← {response}")
                     if expected_response.lower() in response.lower():
-                        self.logger.info(f"[SEQ] ✅ Confirmation received for {command}")
+                        self.logger.info(f"[SEQ] Confirmation received for {command}")
                         return True
 
-            self.logger.error(f"[SEQ] ❌ Timeout waiting for confirmation on {command}")
+            self.logger.error(f"[SEQ] Timeout waiting for confirmation on {command}")
             return False
         except Exception as e:
-            self.logger.error(f"[SEQ] ⚠️ Arduino command wait failed: {e}")
+            self.logger.error(f"[SEQ] Arduino command wait failed: {e}")
             return False
 
 
@@ -748,7 +813,7 @@ class MQTTRobotController:
             # Step 1: Home gripper (Arduino)
             self.logger.info("Step 1: Homing gripper")
             self._send_arduino_command("robot_gripper_home")
-            time.sleep(2.0)  # Wait for gripper to home
+            time.sleep(65)  # Wait for gripper to home
             
             # Step 2: Home horizontal axis (EtherCAT servo)
             self.logger.info("Step 2: Homing horizontal axis")
