@@ -752,7 +752,7 @@ class MQTTRobotController:
             self.logger.error(f"Arduino command failed: {e}")
             return False
         
-    def _send_arduino_command_and_wait(self, command, expected_response="true", timeout=60.0):
+    def _send_arduino_command_and_wait(self, command, expected_response="true", timeout=3.0):
         """Send command to Arduino and wait until expected response is received"""
         try:
             if not self.arduino:
