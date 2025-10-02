@@ -532,14 +532,6 @@ class MQTTRobotController:
         try:
             self.logger.info("Starting drone preparation sequence")
             
-            # Step 1: Move to drone pickup position
-            self.logger.info("Step 1: Moving to drone pickup position")
-            drone_pos = self.config.POSITIONS['drone_pickup']
-            success = self.servo_controller.move_to_position(drone_pos, True, 30.0)
-            if not success:
-                raise Exception("Failed to reach drone pickup position")
-            time.sleep(0.5)
-            
             # Step 2: Gripper vertical to pickup height
             self.logger.info("Step 2: Gripper vertical to pickup height")
             if not self._send_arduino_command_and_wait("robot_vertical_7700"): return
@@ -575,6 +567,14 @@ class MQTTRobotController:
         """Execute complete drone box pickup and storage sequence"""
         try:
             self.logger.info(f"Starting drone pickup-storage sequence for {box_id}")
+            
+            # Step 1: Move to drone pickup position
+            self.logger.info("Step 1: Moving to drone pickup position")
+            drone_pos = self.config.POSITIONS['drone_pickup']
+            success = self.servo_controller.move_to_position(drone_pos, True, 30.0)
+            if not success:
+                raise Exception("Failed to reach drone pickup position")
+            time.sleep(0.5)
             
             # Full sequence as before
             if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
