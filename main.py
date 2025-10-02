@@ -781,37 +781,37 @@ class MQTTRobotController:
     
     def _connect_motor(self, interface, home_position=0):
         """Connect to servo motor and setup Arduino"""
-        if self._setup_arduino_connection():
-            # Perform homing sequence
-            self.logger.info("Performing initialization homing sequence...")
-            # self._perform_homing_sequence()
+        # if self._setup_arduino_connection():
+        #     # Perform homing sequence
+        #     self.logger.info("Performing initialization homing sequence...")
+        #     # self._perform_homing_sequence()
         
-        return True
+        # return True
             
-        # try:
-        #     # Connect EtherCAT servo with absolute home position
-        #     self.servo_controller = ServoMotorController(interface, home_position)
-        #     success = self.servo_controller.connect()
+        try:
+            # Connect EtherCAT servo with absolute home position
+            self.servo_controller = ServoMotorController(interface, home_position)
+            success = self.servo_controller.connect()
             
-        #     if success:
-        #         self.servo_controller.set_motion_parameters(
-        #             **self.config.DEFAULT_MOTION_PARAMS
-        #         )
-        #         self.logger.info("EtherCAT servo connected and configured")
+            if success:
+                self.servo_controller.set_motion_parameters(
+                    **self.config.DEFAULT_MOTION_PARAMS
+                )
+                self.logger.info("EtherCAT servo connected and configured")
                 
-        #         # Setup Arduino connection
-        #         if self._setup_arduino_connection():
-        #             # Perform homing sequence
-        #             self.logger.info("Performing initialization homing sequence...")
-        #             # self._perform_homing_sequence()
+                # Setup Arduino connection
+                if self._setup_arduino_connection():
+                    # Perform homing sequence
+                    self.logger.info("Performing initialization homing sequence...")
+                    # self._perform_homing_sequence()
                 
-        #         return True
+                return True
             
-        #     return False
+            return False
             
-        # except Exception as e:
-        #     self.logger.error(f"Motor connection failed: {e}")
-        #     return False
+        except Exception as e:
+            self.logger.error(f"Motor connection failed: {e}")
+            return False
 
     def _perform_homing_sequence(self):
         """Perform homing sequence for gripper and horizontal axis"""
