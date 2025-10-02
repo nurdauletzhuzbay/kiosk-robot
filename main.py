@@ -87,7 +87,7 @@ class Config:
         'home': 0,              # Home/rest position
         'pickup_shelf': 500,     # Position to pickup box from shelf (PLACEHOLDER)
         'delivery': 1500,        # Position to deliver box to customer (PLACEHOLDER)
-        'drone_pickup': 250,    # Position to pickup box from drone port (PLACEHOLDER)
+        'drone_pickup': 200,    # Position to pickup box from drone port (PLACEHOLDER)
         'storage_shelf': 135,   # Position to store box on shelf (PLACEHOLDER)
     }
     
@@ -542,7 +542,7 @@ class MQTTRobotController:
             
             # Step 2: Gripper vertical to pickup height
             self.logger.info("Step 2: Gripper vertical to pickup height")
-            if not self._send_arduino_command_and_wait("robot_vertical_7850"): return
+            if not self._send_arduino_command_and_wait("robot_vertical_7700"): return
             time.sleep(1.0)
             
             self.operational_state = "ready_for_box"
@@ -583,6 +583,9 @@ class MQTTRobotController:
             time.sleep(1.0)
             if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
             time.sleep(1.0)
+
+            self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
+            
             if not self._send_arduino_command_and_wait(f"robot_vertical_0"): return  # Return to home position
             time.sleep(1.0)
             
@@ -590,7 +593,7 @@ class MQTTRobotController:
             self.logger.info(f"[SEQ] Moving to delivery position → {delivery_pos}")
             self.servo_controller.move_to_position(delivery_pos, True, 30.0)
 
-            if not self._send_arduino_command_and_wait("robot_vertical_350"): return
+            if not self._send_arduino_command_and_wait("robot_vertical_450"): return
             time.sleep(1)
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_right"): return
             time.sleep(1)
