@@ -602,12 +602,12 @@ class MQTTRobotController:
             if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
             time.sleep(1)
             if not self._send_arduino_command_and_wait("robot_gripper_open"): return
-            time.sleep(10)
+            time.sleep(2)
 
             if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
-            time.sleep(10)
+            time.sleep(2)
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
-            time.sleep(10)
+            time.sleep(2)
             if not self._send_arduino_command_and_wait("robot_vertical_0"): return
 
             # self.logger.info(f"[SEQ] Returning to home position")
