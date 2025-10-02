@@ -534,7 +534,7 @@ class MQTTRobotController:
             
             # Step 2: Gripper vertical to pickup height
             self.logger.info("Step 2: Gripper vertical to pickup height")
-            if not self._send_arduino_command_and_wait("robot_vertical_7500"): return
+            if not self._send_arduino_command_and_wait("robot_vertical_7550"): return
             time.sleep(1.0)
             
             self.operational_state = "ready_for_box"
