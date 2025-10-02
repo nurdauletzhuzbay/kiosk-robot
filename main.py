@@ -586,28 +586,29 @@ class MQTTRobotController:
             if not self._send_arduino_command_and_wait(f"robot_vertical_0"): return  # Return to home position
             time.sleep(1.0)
             
-            storage_pos = self.config.POSITIONS['home']
-            success = self.servo_controller.move_to_position(storage_pos, True, 30.0)
-            if not success:
-                raise Exception("Failed to reach storage position")
-            time.sleep(0.5)
-            if not self._send_arduino_command_and_wait(f"robot_vertical_4400"): return  # Return to home position
-            time.sleep(1.0)
-            if not self._send_arduino_command_and_wait("robot_gripper_rotate_left"): return
-            time.sleep(1.0)
+            delivery_pos = self.config.POSITIONS['delivery']
+            self.logger.info(f"[SEQ] Moving to delivery position → {delivery_pos}")
+            self.servo_controller.move_to_position(delivery_pos, True, 30.0)
+
+            if not self._send_arduino_command_and_wait("robot_vertical_350"): return
+            time.sleep(1)
+            if not self._send_arduino_command_and_wait("robot_gripper_rotate_right"): return
+            time.sleep(1)
             if not self._send_arduino_command_and_wait("robot_gripper_slide_forward"): return
-            time.sleep(1.0)
+            time.sleep(1)
             if not self._send_arduino_command_and_wait("robot_gripper_open"): return
-            time.sleep(1.0)
+            time.sleep(10)
+
             if not self._send_arduino_command_and_wait("robot_gripper_slide_backward"): return
-            time.sleep(1.0)
+            time.sleep(10)
             if not self._send_arduino_command_and_wait("robot_gripper_rotate_center"): return
-            time.sleep(1.0)
-            if not self._send_arduino_command_and_wait("robot_gripper_home"): return
-            time.sleep(1.0)
-            
-            self._publish_box_retrieved(box_id)
+            time.sleep(10)
+            if not self._send_arduino_command_and_wait("robot_vertical_0"): return
+
+            # self.logger.info(f"[SEQ] Returning to home position")
             self.servo_controller.move_to_position(self.config.POSITIONS['home'], True, 30.0)
+            self._publish_box_delivered(box_id)
+            self.logger.info(f"[SEQ] Box {box_id} delivered")
             
             self.operational_state = "idle"
             self.current_box_id = None
@@ -780,30 +781,37 @@ class MQTTRobotController:
     
     def _connect_motor(self, interface, home_position=0):
         """Connect to servo motor and setup Arduino"""
-        try:
-            # Connect EtherCAT servo with absolute home position
-            self.servo_controller = ServoMotorController(interface, home_position)
-            success = self.servo_controller.connect()
+        if self._setup_arduino_connection():
+            # Perform homing sequence
+            self.logger.info("Performing initialization homing sequence...")
+            # self._perform_homing_sequence()
+        
+        return True
             
-            if success:
-                self.servo_controller.set_motion_parameters(
-                    **self.config.DEFAULT_MOTION_PARAMS
-                )
-                self.logger.info("EtherCAT servo connected and configured")
+        # try:
+        #     # Connect EtherCAT servo with absolute home position
+        #     self.servo_controller = ServoMotorController(interface, home_position)
+        #     success = self.servo_controller.connect()
+            
+        #     if success:
+        #         self.servo_controller.set_motion_parameters(
+        #             **self.config.DEFAULT_MOTION_PARAMS
+        #         )
+        #         self.logger.info("EtherCAT servo connected and configured")
                 
-                # Setup Arduino connection
-                if self._setup_arduino_connection():
-                    # Perform homing sequence
-                    self.logger.info("Performing initialization homing sequence...")
-                    # self._perform_homing_sequence()
+        #         # Setup Arduino connection
+        #         if self._setup_arduino_connection():
+        #             # Perform homing sequence
+        #             self.logger.info("Performing initialization homing sequence...")
+        #             # self._perform_homing_sequence()
                 
-                return True
+        #         return True
             
-            return False
+        #     return False
             
-        except Exception as e:
-            self.logger.error(f"Motor connection failed: {e}")
-            return False
+        # except Exception as e:
+        #     self.logger.error(f"Motor connection failed: {e}")
+        #     return False
 
     def _perform_homing_sequence(self):
         """Perform homing sequence for gripper and horizontal axis"""
