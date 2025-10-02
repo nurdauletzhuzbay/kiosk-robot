@@ -589,7 +589,7 @@ class MQTTRobotController:
             self.logger.info(f"[SEQ] Box {box_id} retrieved")
             
             if not self._send_arduino_command_and_wait(f"robot_vertical_0"): return  # Return to home position
-            time.sleep(8.0)
+            time.sleep(15.0)
             
             delivery_pos = self.config.POSITIONS['delivery']
             self.logger.info(f"[SEQ] Moving to delivery position → {delivery_pos}")
