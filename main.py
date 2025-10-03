@@ -87,7 +87,7 @@ class Config:
         'home': 0,              # Home/rest position
         'pickup_shelf': 500,     # Position to pickup box from shelf (PLACEHOLDER)
         'delivery': 1500,        # Position to deliver box to customer (PLACEHOLDER)
-        'drone_pickup': 200,    # Position to pickup box from drone port (PLACEHOLDER)
+        'drone_pickup': 300,    # Position to pickup box from drone port (PLACEHOLDER)
         'storage_shelf': 135,   # Position to store box on shelf (PLACEHOLDER)
     }
     
